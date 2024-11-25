@@ -11,10 +11,13 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"xidian_tybsouthgym/client/models"
+
+	"github.com/gorilla/websocket"
 )
 
 const Domain = "tybsouthgym.xidian.edu.cn"
@@ -85,9 +88,35 @@ func SaveCookie(JWTUserToken, UserId, WXOpenId string) error {
 }
 
 // new
-func New() *XidianTybsouthgymClient {
+func New(JWTUserToken, UserId, WXOpenId string, demand int) *XidianTybsouthgymClient {
+	// jwtUserToken := flag.String("token", JWTUserToken, "JWTUserToken")
+	// userId := flag.String("id", UserId, "UserId")
+	// wxOpenId := flag.String("wx", WXOpenId, "WXOpenId")
 
-	//cookie
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		panic(err)
+	}
+	jar_url, err := url.Parse(HostUrl)
+	if err != nil {
+		panic(err)
+	}
+	jar.SetCookies(
+		jar_url,
+		[]*http.Cookie{
+			{Name: "JWTUserToken", Value: JWTUserToken},
+			{Name: "UserId", Value: UserId},
+			{Name: "WXOpenId", Value: WXOpenId},
+		},
+	)
+	client := &http.Client{
+		Jar: jar,
+	}
+	return &XidianTybsouthgymClient{successCount: 0, client: client, demand: demand}
+}
+
+func DefaultClient() *XidianTybsouthgymClient {
+	// cookie
 	JWTUserToken, UserId, WXOpenId, err := LoadCookie()
 	if err != nil || JWTUserToken == "" || UserId == "" || WXOpenId == "" {
 		fmt.Println("cookie文件不存在,请输入cookie:")
@@ -128,14 +157,18 @@ func New() *XidianTybsouthgymClient {
 	client := &http.Client{
 		Jar: jar,
 	}
-
 	fmt.Println("需要订单数量:")
 	demand := 0
 	if _, err := fmt.Scan(&demand); err != nil || demand <= 0 {
 		panic(fmt.Errorf("输入错误"))
 	}
-
-	return &XidianTybsouthgymClient{successCount: 0, client: client, demand: demand}
+	ans := &XidianTybsouthgymClient{successCount: 0, client: client, demand: demand}
+	if ans.CheckUserStatus() {
+		return ans
+	} else {
+		fmt.Println("用户cookie失效,请删除cookie.txt文件后重试")
+		panic(fmt.Errorf("用户未登录"))
+	}
 }
 
 type NoMethodError struct {
@@ -148,7 +181,11 @@ func (e NoMethodError) Error() string {
 func (c *XidianTybsouthgymClient) Request(method, path string, params string, body url.Values) (*http.Response, error) {
 	if method == "GET" {
 		//fmt.Println(method, HostUrl+path+"?"+params)
-		return c.client.Get(HostUrl + path + "?" + params)
+		if params == "" {
+			return c.client.Get(HostUrl + path)
+		} else {
+			return c.client.Get(HostUrl + path + "?" + params)
+		}
 	} else if method == "POST" {
 		return c.client.PostForm(HostUrl+path, body)
 	} else {
@@ -187,6 +224,16 @@ func (c *XidianTybsouthgymClient) PostOrder(FieldNo, FieldTypeNo, FieldName, Beg
 type rsp struct {
 	Message string `json:"message"`
 	Type    int    `json:"type"`
+}
+
+func (c *XidianTybsouthgymClient) CheckUserStatus() bool {
+	resp, err := c.Request("GET", "/User/CheckUserStatus", "", nil)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	return string(bodyBytes) == "1"
 }
 
 func (c *XidianTybsouthgymClient) GetOrderByTime() {
@@ -232,6 +279,7 @@ func (c *XidianTybsouthgymClient) GetOrderByTime() {
 
 		orders, err := JsonToList(resp.Body)
 		if err != nil {
+			fmt.Println(err)
 			panic(err)
 		}
 		fmt.Println("已被预订:")
@@ -276,6 +324,94 @@ func (c *XidianTybsouthgymClient) GetOrderByTime() {
 		}
 		time.Sleep(10 * time.Second)
 
+	}
+}
+
+func (c *XidianTybsouthgymClient) GetOrderByTime2(fieldType, dateAdd, TimePeriod int, conn *websocket.Conn) bool {
+	FieldTypeNo := ""
+	if fieldType == 1 {
+		FieldTypeNo = models.YMQ{}.GetFieldTypeNo()
+	} else if fieldType == 2 {
+		FieldTypeNo = models.PPQ{}.GetFieldTypeNo()
+	} else if fieldType == 3 {
+		FieldTypeNo = models.LQ{}.GetFieldTypeNo()
+	} else {
+		conn.WriteMessage(websocket.TextMessage, []byte("参数错误"))
+		return false
+	}
+	for {
+		_, p, err := conn.ReadMessage()
+		if err != nil {
+			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
+			return false
+		}
+		sp := string(p)
+		if sp == "stop" {
+			conn.WriteMessage(websocket.TextMessage, []byte("已停止"))
+			return false
+		} else if sp == "continue" {
+			conn.WriteMessage(websocket.TextMessage, []byte("continue"))
+		}
+
+		params := "dateadd=" + strconv.Itoa(dateAdd) + "&TimePeriod=" + strconv.Itoa(TimePeriod) + "&VenueNo=01" + "&FieldTypeNo=" + FieldTypeNo
+
+		resp, err := c.Request("GET", "/Field/GetVenueStateNew", params, nil)
+		if err != nil {
+			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
+			return false
+		}
+		orders, err := JsonToList(resp.Body)
+		if err != nil {
+			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
+			return false
+		}
+		conn.WriteMessage(websocket.TextMessage, []byte("已被预订:"))
+		for i, order := range orders {
+			if order.FieldState == "0" {
+				continue
+			}
+			output := fmt.Sprint("id:", i,
+				"BeginTime:", order.BeginTime,
+				"EndTime:", order.EndTime,
+				"Count", order.Count,
+				"FieldNo", order.FieldNo,
+				"FieldName", order.FieldName,
+				"FieldTypeNo", order.FieldTypeNo,
+				"FinalPrice", order.FinalPrice,
+				"TimeStatus", order.TimeStatus,
+				"FieldState", order.FieldState,
+				"IsHalfHour", order.IsHalfHour,
+				"ShowWidth", order.ShowWidth,
+				"DateBeginTime", order.DateBeginTime,
+				"DateEndTime", order.DateEndTime,
+				"TimePeriod", order.TimePeriod,
+				"MembeName", order.MembeName)
+			conn.WriteMessage(websocket.TextMessage, []byte(output))
+		}
+		slices.Reverse(orders)
+		for _, order := range orders {
+			if order.FieldState == "0" {
+				res := c.PostOrder(order.FieldNo, order.FieldTypeNo, order.FieldName, order.BeginTime, order.EndTime, order.FinalPrice, strconv.Itoa(dateAdd), "01")
+				output := fmt.Sprint("下单", order.FieldName, "中")
+				conn.WriteMessage(websocket.TextMessage, []byte(output))
+				data := rsp{}
+				json.Unmarshal(res, &data)
+				if data.Message != "" && data.Type == 3 {
+					output = fmt.Sprint("下单失败", data.Message)
+					conn.WriteMessage(websocket.TextMessage, []byte(output))
+				} else {
+					output = fmt.Sprint(order.FieldName, "号场地预定成功，请尽快支付！")
+					conn.WriteMessage(websocket.TextMessage, []byte(output))
+					c.successCount++
+					if c.successCount >= c.demand {
+						conn.WriteMessage(websocket.TextMessage, []byte("已达到预定数量，程序退出"))
+						return true
+					}
+				}
+				time.Sleep(10 * time.Second)
+			}
+		}
+		time.Sleep(10 * time.Second)
 	}
 }
 
