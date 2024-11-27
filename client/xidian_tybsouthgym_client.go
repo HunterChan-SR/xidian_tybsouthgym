@@ -365,29 +365,29 @@ func (c *XidianTybsouthgymClient) GetOrderByTime2(fieldType, dateAdd, TimePeriod
 			conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
 			return false
 		}
-		conn.WriteMessage(websocket.TextMessage, []byte("已被预订:"))
-		for i, order := range orders {
-			if order.FieldState == "0" {
-				continue
-			}
-			output := fmt.Sprint("id:", i,
-				"BeginTime:", order.BeginTime,
-				"EndTime:", order.EndTime,
-				"Count", order.Count,
-				"FieldNo", order.FieldNo,
-				"FieldName", order.FieldName,
-				"FieldTypeNo", order.FieldTypeNo,
-				"FinalPrice", order.FinalPrice,
-				"TimeStatus", order.TimeStatus,
-				"FieldState", order.FieldState,
-				"IsHalfHour", order.IsHalfHour,
-				"ShowWidth", order.ShowWidth,
-				"DateBeginTime", order.DateBeginTime,
-				"DateEndTime", order.DateEndTime,
-				"TimePeriod", order.TimePeriod,
-				"MembeName", order.MembeName)
-			conn.WriteMessage(websocket.TextMessage, []byte(output))
-		}
+		// conn.WriteMessage(websocket.TextMessage, []byte("已被预订:"))
+		// for i, order := range orders {
+		// 	if order.FieldState == "0" {
+		// 		continue
+		// 	}
+		// 	output := fmt.Sprint("id:", i,
+		// 		"BeginTime:", order.BeginTime,
+		// 		"EndTime:", order.EndTime,
+		// 		"Count", order.Count,
+		// 		"FieldNo", order.FieldNo,
+		// 		"FieldName", order.FieldName,
+		// 		"FieldTypeNo", order.FieldTypeNo,
+		// 		"FinalPrice", order.FinalPrice,
+		// 		"TimeStatus", order.TimeStatus,
+		// 		"FieldState", order.FieldState,
+		// 		"IsHalfHour", order.IsHalfHour,
+		// 		"ShowWidth", order.ShowWidth,
+		// 		"DateBeginTime", order.DateBeginTime,
+		// 		"DateEndTime", order.DateEndTime,
+		// 		"TimePeriod", order.TimePeriod,
+		// 		"MembeName", order.MembeName)
+		// 	conn.WriteMessage(websocket.TextMessage, []byte(output))
+		// }
 		slices.Reverse(orders)
 		for _, order := range orders {
 			if order.FieldState == "0" {

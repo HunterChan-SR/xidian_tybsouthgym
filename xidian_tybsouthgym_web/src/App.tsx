@@ -1,17 +1,32 @@
 import  {useRef, useState } from 'react';
-import { Form, InputNumber, Select, Button, message, Input } from 'antd';
+import { Form, InputNumber, Select, Button, message, Input, Switch } from 'antd';
 import TextArea from 'antd/es/input/TextArea';
 
 const { Option } = Select;
 const apiurl = "/api"
 function App() {
+  const [time12,setTime12] = useState(true);
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string>('点击抢按钮后，请勿关闭浏览器!!!!!\n');
   const ws = useRef<WebSocket | null>(null);
-
+  
   const onFinish = () => {
     setLoading(true);
+    console.log(time12)
+    while(time12){
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+      const timeDiff = midnight.getTime() - now.getTime();
+      if (timeDiff > 0) {
+        setTimeout(() => {
+          setMsg( msg => msg + '距离12:00还有' + Math.floor(timeDiff / 1000) + '秒\n');
+        }, 1000);
+      } else {
+        setMsg( msg => msg + '12:00已到，开始抢单\n');
+        break;
+      }
+    }
     
     ws.current = new WebSocket('ws://'+ location.hostname+":"+location.port +apiurl);
     ws.current.onopen = () => {
@@ -48,6 +63,7 @@ function App() {
   };
 
   const onFinishFailed = (errorInfo: any) => {
+    console.log(time12)
     console.log('Failed:', errorInfo);
     message.error('表单验证失败');
   };
@@ -152,6 +168,16 @@ function App() {
                 <Option value={1}>下午</Option>
                 <Option value={2}>晚上</Option>
               </Select>
+            </Form.Item>
+            
+            <Form.Item
+              label = "定时12:00"
+              name = "time12"
+            >
+              <Switch checkedChildren="开启" unCheckedChildren="关闭" checked={time12} onChange={(checked) => {
+                setTime12(checked)
+              }}/>
+
             </Form.Item>
 
             <Form.Item wrapperCol={{ offset: 8, span: 16 }}>
