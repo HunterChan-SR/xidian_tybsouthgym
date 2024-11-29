@@ -339,6 +339,30 @@ func (c *XidianTybsouthgymClient) GetOrderByTime2(fieldType, dateAdd, TimePeriod
 		conn.WriteMessage(websocket.TextMessage, []byte("参数错误"))
 		return false
 	}
+	if dateAdd == 2 {
+		for {
+			_, p, err := conn.ReadMessage()
+			if err != nil {
+				conn.WriteMessage(websocket.TextMessage, []byte(err.Error()))
+				return false
+			}
+			sp := string(p)
+			if sp == "stop" {
+				conn.WriteMessage(websocket.TextMessage, []byte("已停止"))
+				return false
+			} else if sp == "continue" {
+				conn.WriteMessage(websocket.TextMessage, []byte("continue,未到12:00"))
+			}
+
+			currentTime := time.Now()
+			if currentTime.Hour() >= 12 {
+				break
+			}
+			// 休眠 1 秒
+			time.Sleep(1 * time.Second)
+		}
+	}
+
 	for {
 		_, p, err := conn.ReadMessage()
 		if err != nil {

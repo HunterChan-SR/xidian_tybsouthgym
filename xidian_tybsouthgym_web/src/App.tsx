@@ -12,21 +12,24 @@ function App() {
   const ws = useRef<WebSocket | null>(null);
   
   const onFinish = () => {
+    console.log('finishForm')
     setLoading(true);
-    console.log(time12)
-    while(time12){
-      const now = new Date();
-      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
-      const timeDiff = midnight.getTime() - now.getTime();
-      if (timeDiff > 0) {
-        setTimeout(() => {
-          setMsg( msg => msg + '距离12:00还有' + Math.floor(timeDiff / 1000) + '秒\n');
-        }, 1000);
-      } else {
-        setMsg( msg => msg + '12:00已到，开始抢单\n');
-        break;
-      }
-    }
+    // console.log(time12)
+    // if(time12){
+    //   const interval = setInterval(() => {
+    //     console.log('check time')
+    //     const now = new Date();
+    //     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+    //     const timeDiff = midnight.getTime() - now.getTime();
+    //     if (timeDiff > 0) {
+    //       setMsg( msg => msg + '距离12:00还有' + Math.floor(timeDiff / 1000) + '秒\n');
+    //     } else {
+    //       setMsg( msg => msg + '12:00已到，开始抢单\n');
+    //       clearInterval(interval);
+    //     }
+    //   }, 1000);
+    // }
+
     
     ws.current = new WebSocket('ws://'+ location.hostname+":"+location.port +apiurl);
     ws.current.onopen = () => {
