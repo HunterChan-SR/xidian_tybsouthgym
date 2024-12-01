@@ -1,15 +1,18 @@
 import  {useRef, useState } from 'react';
 import { Form, InputNumber, Select, Button, message, Input, Switch } from 'antd';
 import TextArea from 'antd/es/input/TextArea';
-
+import 'react-h5-audio-player/lib/styles.css';
 const { Option } = Select;
 const apiurl = "/api"
+
 function App() {
   const [time12,setTime12] = useState(true);
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string>('点击抢按钮后，请勿关闭浏览器!!!!!\n');
   const ws = useRef<WebSocket | null>(null);
+  const player = new Audio('hyl.mp3')
+  player.loop = true;
   
   const onFinish = () => {
     console.log('finishForm')
@@ -39,6 +42,7 @@ function App() {
       setMsg( msg => msg + e.data + '\n');
       if (e.data.startsWith('结束工作...')) {
         ws.current?.close();
+        alert('抢单结束');
         setLoading(false);
       }
       if (e.data.startsWith('error')){
@@ -55,6 +59,11 @@ function App() {
       }
       if (e.data.startsWith('continue')){
         ws.current?.send('continue')
+      }
+      if (e.data.startsWith('success')){
+        if(player.paused)
+          player.play();
+        console.log('抢单成功') 
       }
     };
     return () => {
@@ -198,6 +207,19 @@ function App() {
           </Form>
         </div>
         <div style={{flex:1}}>
+
+          <Button  onClick={()=>{
+              if (player.paused)
+                player.play()
+            }            
+          }>测试音乐</Button>
+          <Button onClick={()=>{
+              player.pause()
+              player.currentTime = 0
+            }            
+          }>别唱了</Button>
+
+
           <h1>消息队列</h1>
           <TextArea style={{width:'100%', height:'100%'}} value={msg} disabled ></TextArea>
         </div>

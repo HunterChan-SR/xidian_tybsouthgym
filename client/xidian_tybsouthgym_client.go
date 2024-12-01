@@ -414,6 +414,26 @@ func (c *XidianTybsouthgymClient) GetOrderByTime2(fieldType, dateAdd, TimePeriod
 		// }
 		slices.Reverse(orders)
 		for _, order := range orders {
+			// if order.FieldState == "0" {
+			// 	res := c.PostOrder(order.FieldNo, order.FieldTypeNo, order.FieldName, order.BeginTime, order.EndTime, order.FinalPrice, strconv.Itoa(dateAdd), "01")
+			// 	output := fmt.Sprint("下单", order.FieldName, "中")
+			// 	conn.WriteMessage(websocket.TextMessage, []byte(output))
+			// 	data := rsp{}
+			// 	json.Unmarshal(res, &data)
+			// 	if data.Message != "" && data.Type == 3 {
+			// 		output = fmt.Sprint("下单失败", data.Message)
+			// 		conn.WriteMessage(websocket.TextMessage, []byte(output))
+			// 	} else {
+			// 		output = fmt.Sprint(order.FieldName, "号场地预定成功，请尽快支付！")
+			// 		conn.WriteMessage(websocket.TextMessage, []byte(output))
+			// 		c.successCount++
+			// 		if c.successCount >= c.demand {
+			// 			conn.WriteMessage(websocket.TextMessage, []byte("已达到预定数量，程序退出"))
+			// 			return true
+			// 		}
+			// 	}
+			// 	time.Sleep(10 * time.Second)
+			// }
 			if order.FieldState == "0" {
 				res := c.PostOrder(order.FieldNo, order.FieldTypeNo, order.FieldName, order.BeginTime, order.EndTime, order.FinalPrice, strconv.Itoa(dateAdd), "01")
 				output := fmt.Sprint("下单", order.FieldName, "中")
@@ -424,7 +444,7 @@ func (c *XidianTybsouthgymClient) GetOrderByTime2(fieldType, dateAdd, TimePeriod
 					output = fmt.Sprint("下单失败", data.Message)
 					conn.WriteMessage(websocket.TextMessage, []byte(output))
 				} else {
-					output = fmt.Sprint(order.FieldName, "号场地预定成功，请尽快支付！")
+					output = fmt.Sprint("success", order.FieldName, "号场地预定成功，请尽快支付！")
 					conn.WriteMessage(websocket.TextMessage, []byte(output))
 					c.successCount++
 					if c.successCount >= c.demand {
@@ -432,10 +452,10 @@ func (c *XidianTybsouthgymClient) GetOrderByTime2(fieldType, dateAdd, TimePeriod
 						return true
 					}
 				}
-				time.Sleep(10 * time.Second)
+				break
 			}
 		}
-		time.Sleep(10 * time.Second)
+		time.Sleep(6 * time.Second)
 	}
 }
 
