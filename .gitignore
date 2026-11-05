@@ -11,6 +11,12 @@ booking.json
 .env
 .env.*
 
+# Session cookies
+cookie.txt
+cookies.txt
+*.cookie
+*.cookies
+
 # Local observations and historical third-party material
 research/plan.json
 research/hypotheses.json
