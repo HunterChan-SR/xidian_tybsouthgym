@@ -1,0 +1,31 @@
+{
+  "VenueNo": "01",
+  "FieldTypeNo": "001",
+  "DateAdd": 2,
+  "BeginTime": "19:00",
+  "EndTime": "21:00",
+  "PreferredFields": [
+    "YMQ004"
+  ],
+  "AllowOtherFields": true,
+  "FieldPrefix": "YMQ",
+  "MaxTotalCents": 2400,
+  "ReleaseTime": "12:00:00",
+  "WindowSeconds": 90,
+  "PollSeconds": 2,
+  "RequestTimeoutSeconds": 5,
+  "CookieFile": "data/session.json",
+  "StateDir": "runtime",
+  "AllowLive": false,
+  "Accounts": [
+    {
+      "Name": "primary",
+      "CookieFile": "data/session.json"
+    }
+  ],
+  "PoolID": "badminton-19-21",
+  "BookingCaptcha": true,
+  "WeekendAfternoon": true,
+  "EveningFlexible": false,
+  "AllDayFallback": false
+}

@@ -1,0 +1,4 @@
+selenium>=4.32,<5
+cryptography>=44
+numpy
+opencv-python

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "purpose": "授权范围内的预约观测与离线复盘",
+  "activeStrategy": {
+    "id": "south-weekend-afternoon",
+    "status": "active",
+    "implementation": "booking.exe",
+    "goal": "南校区同场两小时；周六周日15–17优先、19–21备选，其他日期19–21；004优先、最多24元。"
+  },
+  "activeExperiment": {
+    "id": "baseline",
+    "description": "记录事实、反例及混杂因素；单次响应不证明限速阈值。"
+  },
+  "feedback": []
+}

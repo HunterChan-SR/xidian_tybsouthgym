@@ -1,0 +1,19 @@
+.tools/
+.venv/
+__pycache__/
+data/
+runtime/
+evidence/
+booking.json
+*.exe
+*.log
+*.key
+.env
+.env.*
+
+# Local observations and historical third-party material
+research/plan.json
+research/hypotheses.json
+docs/history-*.md
+*.zip
+*.pyc
