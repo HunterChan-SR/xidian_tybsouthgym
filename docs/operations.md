@@ -12,9 +12,9 @@ python -X utf8 main.py login --account primary 用于手动登录；已有授权
 
 health 顺序检查 CheckUserStatus 和场馆查询；ready 只证明查询可用。区分会话失效、网络故障、HTTP限流、服务器异常和未知响应。429停止后续账号检查，不通过换账号规避等待。
 
-BookingCaptcha=true 时，程序选择候选后获取官方 GetFieldSliderCaptcha 挑战，在 Edge 官方组件中等待用户拖动，将 SliderToken/SliderX 只附加到接下来的一次提交。它独立于校园登录验证码。该本机交互桥接尚待真实获准预约验证；离线测试通过不代表服务器端已通过验证。
+BookingCaptcha=true 时，程序选择候选后获取官方 GetFieldSliderCaptcha 挑战，在 Edge 官方组件中等待用户拖动，将 SliderToken/SliderX 只附加到接下来的一次提交。它独立于校园登录验证码。Edge 只加载官方组件，预约会话由 Go 进程持有。可运行 `.\booking.exe -config booking.json -mode captcha-preview` 预演。它获取一个官方挑战并等待人工拖动，结果写入 `runtime/latest-captcha-preview.json`，流程在下单之前结束。预演通过验证的是显示和人工结果回传。
 
-取消、超时、协议变化或验证码拒绝均停止本次流程；原始凭据文件仅在 runtime/captcha 临时存放并在正常结束时清理，不进入日志或仓库。程序被强制终止可能留下临时文件，确认无运行进程后可清理这些挑战文件，不能因此删除订单保护。
+取消、超时、协议变化或验证码拒绝均停止本次流程；滑块挑战和人工结果仅在 runtime/captcha 临时存放并在正常结束时清理，不进入日志或仓库。程序被强制终止可能留下临时文件，确认无运行进程后可清理这些挑战文件，不能因此删除订单保护。
 
 ## 每日流程
 
