@@ -62,15 +62,7 @@ func (c *Client) humanCaptcha(ctx context.Context, cfg Config, challenge []byte,
 	f.Close()
 	defer os.Remove(path)
 	defer os.Remove(path + ".reply")
-	u, _ := url.Parse(c.Base)
-	cookies := ""
-	for _, v := range c.HTTP.Jar.Cookies(u) {
-		if cookies != "" {
-			cookies += "; "
-		}
-		cookies += v.Name + "=" + v.Value
-	}
-	if err = saveJSON(path, map[string]any{"challenge": json.RawMessage(challenge), "cookie": cookies, "account": c.Name, "fieldType": cfg.FieldTypeNo}); err != nil {
+	if err = saveJSON(path, map[string]any{"challenge": json.RawMessage(challenge), "account": c.Name}); err != nil {
 		return nil, err
 	}
 	c.event(map[string]any{"event": "booking_captcha_wait", "account": c.Name})
@@ -82,6 +74,7 @@ func (c *Client) humanCaptcha(ctx context.Context, cfg Config, challenge []byte,
 	cmd := exec.CommandContext(ctx, "python", "-X", "utf8", filepath.Join(root, "main.py"), "captcha", "--request", path)
 	cmd.Dir = root
 	// Browser is interactive; never print request data or subprocess exceptions containing it.
+	cmd.Stdout = os.Stdout
 	if err = cmd.Run(); err != nil {
 		return nil, &Fault{Kind: "booking_captcha_not_completed"}
 	}
@@ -105,4 +98,25 @@ func captchaValues(reply captchaReply, token string) (url.Values, error) {
 	}
 	return url.Values{"SliderToken": {reply.Token}, "SliderX": {strconv.Itoa(reply.X)}}, nil
 
+}
+
+// previewCaptcha exercises the production slider path without selecting or submitting any order.
+func previewCaptcha(ctx context.Context, clients []*Client, cfg Config) (Outcome, error) {
+	out := Outcome{Status: "captcha_preview_started"}
+	ready, err := preparePool(ctx, clients)
+	if err != nil {
+		return out, err
+	}
+	c := ready[0].client
+	out.Account = c.Name
+	proof, err := c.bookingCaptcha(ctx, cfg)
+	if err != nil {
+		return out, err
+	}
+	if len(proof) == 0 {
+		out.Status = "captcha_preview_not_required"
+	} else {
+		out.Status = "captcha_preview_completed"
+	}
+	return out, nil
 }

@@ -76,3 +76,27 @@ func TestWeekendTargetBothDays(t *testing.T) {
 		}
 	}
 }
+
+func TestCaptchaPreviewHasNoOrderPath(t *testing.T) {
+	cfg := config(t)
+	cfg.AllowLive = false
+	var challengeRequests int
+	c := fake(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/User/CheckUserStatus":
+			fmt.Fprint(w, "1")
+		case "/Field/GetOrderInfo":
+			fmt.Fprint(w, `{"limitcount":10}`)
+		case "/Field/GetFieldSliderCaptcha":
+			challengeRequests++
+			fmt.Fprint(w, `{"type":0}`)
+		default:
+			t.Errorf("preview made an unexpected request to %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	out, err := previewCaptcha(context.Background(), []*Client{c}, cfg)
+	if err != nil || out.Status != "captcha_preview_not_required" || out.OrderID != "" || challengeRequests != 1 {
+		t.Fatalf("unexpected preview outcome: %+v, %v, requests=%d", out, err, challengeRequests)
+	}
+}
