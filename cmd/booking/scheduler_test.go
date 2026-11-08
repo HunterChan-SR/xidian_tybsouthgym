@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -72,7 +74,19 @@ func TestServerClockBounds(t *testing.T) {
 }
 
 func TestPoolCompetitionFallbackStopsAfterOneSuccess(t *testing.T) {
+	for _, persistent := range []bool{false, true} {
+		t.Run(fmt.Sprint("persistent=", persistent), func(t *testing.T) {
+			testPoolCompetitionFallbackStopsAfterOneSuccess(t, persistent)
+		})
+	}
+}
+
+func testPoolCompetitionFallbackStopsAfterOneSuccess(t *testing.T, persistent bool) {
 	cfg := config(t)
+	background, piece := oracleTestImages(t)
+	cfg.BookingCaptcha = true
+	cfg.CaptchaSolverCommand = randomOracleTestCommand(t)
+	cfg.CaptchaSolverPersistent = persistent
 	cfg.PoolID = "integration"
 	cfg.ReleaseTime = time.Now().In(shanghai).Add(-time.Second).Format("15:04:05")
 	orders := []string{}
@@ -84,6 +98,13 @@ func TestPoolCompetitionFallbackStopsAfterOneSuccess(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]int{"limitcount": 10})
 		case "/Field/GetWeek":
 			fmt.Fprint(w, dateJSON(cfg))
+		case "/Field/GetFieldSliderCaptcha":
+			cookie, err := r.Cookie("UserId")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"type": 1, "token": "challenge-" + cookie.Value, "bg": background, "piece": piece})
 		case "/Field/GetVenueStateNew":
 			slots := pair("YMQ001", "12")
 			if len(orders) == 0 {
@@ -91,6 +112,12 @@ func TestPoolCompetitionFallbackStopsAfterOneSuccess(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(map[string]any{"type": 1, "resultdata": slots})
 		case "/Field/OrderField":
+			cookie, err := r.Cookie("UserId")
+			x, coordinateErr := strconv.Atoi(r.URL.Query().Get("SliderX"))
+			if err != nil || coordinateErr != nil || x < 0 || x > 250 || r.URL.Query().Get("SliderToken") != "challenge-"+cookie.Value {
+				t.Error("order did not use its account's oracle answer")
+				return
+			}
 			var items []Item
 			json.Unmarshal([]byte(r.URL.Query().Get("checkdata")), &items)
 			if len(items) != 2 {
@@ -99,7 +126,7 @@ func TestPoolCompetitionFallbackStopsAfterOneSuccess(t *testing.T) {
 			}
 			orders = append(orders, items[0].FieldNo)
 			if len(orders) == 1 {
-				json.NewEncoder(w).Encode(map[string]any{"type": 2, "message": "场地已被预订"})
+				json.NewEncoder(w).Encode(map[string]any{"type": 3, "message": "抱歉(T_T) 您手速不够快，场地【羽毛球4】已被其他人抢跑"})
 			} else {
 				json.NewEncoder(w).Encode(map[string]any{"type": 1, "resultdata": "single-order"})
 			}
@@ -116,7 +143,14 @@ func TestPoolCompetitionFallbackStopsAfterOneSuccess(t *testing.T) {
 	second := fake(t, handler)
 	second.Name = "two"
 	second.Session.Cookie = "UserId=two"
+	for _, client := range []*Client{first, second} {
+		baseURL, _ := url.Parse(client.Base)
+		client.HTTP.Jar.SetCookies(baseURL, []*http.Cookie{{Name: "UserId", Value: client.Name}})
+	}
 	out, err := runPool(context.Background(), []*Client{first, second}, cfg, "book")
+	if first.oracle != nil || second.oracle != nil {
+		t.Fatal("pool left a worker attached")
+	}
 	if err != nil || out.Status != "reserved_payment_manual" || out.Account != "two" || out.FieldNo != "YMQ001" || !reflect.DeepEqual(orders, []string{"YMQ004", "YMQ001"}) {
 		t.Fatal(out, err, orders)
 	}

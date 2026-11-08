@@ -15,7 +15,9 @@
 | CookieFile | 单账号默认会话路径 |
 | StateDir / PoolID | 状态目录及跨账号共享的目标订单保护标识 |
 | AllowLive | 是否允许真实预约；新配置默认为false |
-| BookingCaptcha | 获取并通过官方组件人工完成下单滑块；当前平台应开启 |
+| BookingCaptcha | 获取下单滑块并等待答案；当前平台应开启 |
+| CaptchaSolverCommand | 可选的本机求解命令及参数数组，空数组或省略时使用官方人工滑块窗口；详见[oracle 接口](captcha-oracle.md) |
+| CaptchaSolverPersistent | 默认false；true要求命令支持stdio协议，在放票前预热一个进程、全池串行复用，本轮结束回收；不适用于默认Edge窗口 |
 | WeekendAfternoon | 南校区目标日期为周六或周日时，15–17优先、19–21备选；要求基础时段19–21且最多24元 |
 | EveningFlexible / AllDayFallback | 北校区晚间择优与全天备选选项，不用于南校区 |
 

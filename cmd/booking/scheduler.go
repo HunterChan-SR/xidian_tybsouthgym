@@ -78,6 +78,15 @@ func runPool(ctx context.Context, clients []*Client, cfg Config, mode string) (o
 		}
 		return cancelTest(ctx, c, cfg, saved)
 	}
+	// Import-heavy external workers are made ready before waiting for release.
+	// Read-only inventory modes do not start a solver or fetch any challenge.
+	if mode == "book" || mode == "test-book" {
+		closeWorker, err := attachOracleWorker(ctx, clients, cfg)
+		if err != nil {
+			return out, err
+		}
+		defer closeWorker()
+	}
 	start, end := window(cfg, now)
 	if mode != "probe" && mode != "test-book" {
 		offset, err := c.clockOffset()

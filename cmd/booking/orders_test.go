@@ -151,3 +151,52 @@ func TestTestOrderLifecycle(t *testing.T) {
 		t.Fatal("test repeated", e, count)
 	}
 }
+
+// Replay the real unpadded-date cancellation failure, while still blocking
+// cancellation when the calendar date is different or cannot be parsed.
+func TestTestCancellationNormalizesDate(t *testing.T) {
+	for _, tc := range []struct{ date, kind string }{
+		{"2026/11/9", ""},
+		{"2026/11/09", ""},
+		{"2026-11-9", ""},
+		{"2026-11-09", ""},
+		{"2026/11/9 00:00:00", ""},
+		{"2026-11-09T00:00:00", ""},
+		{"2026/11/8", "order_details_mismatch"},
+		{"2026/11/31", "order_verification_required"},
+		{"2026/13/9", "order_verification_required"},
+		{"", "order_verification_required"},
+	} {
+		t.Run(tc.date, func(t *testing.T) {
+			cfg := config(t)
+			cfg.TestOnly, cfg.FieldTypeNo, cfg.FieldPrefix = true, "002", "PPQ"
+			cfg.BeginTime, cfg.EndTime, cfg.ExactDate = "18:00", "19:00", "2026-11-09"
+			cfg.MaxTotalCents = 600
+			status, cancels, checks := "0", 0, 0
+			c := fake(t, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/Field/GetPayInfo":
+					json.NewEncoder(w).Encode([]map[string]any{{"FieldNo": "PPQ002", "OrderDate": tc.date, "BeginTime": "18:00", "EndTime": "19:00", "Price": 6.0}})
+				case "/Field/CheckStatus":
+					checks++
+					fmt.Fprintf(w, `[{"PayStatus":%q}]`, status)
+				case "/Field/FieldCancel":
+					cancels++
+					status = "4"
+					fmt.Fprint(w, `{"type":1}`)
+				default:
+					t.Errorf("unexpected endpoint %s", r.URL.Path)
+				}
+			})
+			out := Outcome{IsTest: true, FieldTypeNo: "002", OrderID: "synthetic", TargetDate: cfg.ExactDate, FieldNo: "PPQ002", TotalCents: 600}
+			result, err := cancelTest(context.Background(), c, cfg, out)
+			if tc.kind != "" {
+				if faultKind(err) != tc.kind || cancels != 0 || checks != 0 {
+					t.Fatal("invalid date reached cancellation", result, err, cancels, checks)
+				}
+			} else if err != nil || result.Status != "test_cancelled" || cancels != 1 || checks != 2 || status != "4" {
+				t.Fatal("normalized date did not finish cancellation", result, err, cancels, checks)
+			}
+		})
+	}
+}

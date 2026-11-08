@@ -33,7 +33,20 @@ def main(argv=None):
     refresh.add_argument("--auto-slider", action="store_true")
     captcha = actions.add_parser("captcha", help="显示官方下单滑块，供用户人工完成")
     captcha.add_argument("--request", required=True, type=Path)
+    for name, description in (("oracle-random", "测试oracle，排除估计位置邻域后生成随机坐标"),
+                              ("oracle-reference", "oracle，返回既有算法估计坐标")):
+        oracle = actions.add_parser(name, help=description)
+        transport = oracle.add_mutually_exclusive_group(required=True)
+        transport.add_argument("--request", type=Path)
+        transport.add_argument("--stdio", action="store_true", help="本轮串行复用进程，JSON行协议")
+        if name == "oracle-random":
+            oracle.add_argument("--exclusion-radius", type=int, default=10, help="排除半径，非负整数像素；默认10为测试参数")
     args = parser.parse_args(argv)
+    if args.action in {"oracle-random", "oracle-reference"}:
+        from booking_tools.oracle import run_random, run_stdio
+        options = dict(mode=args.action.removeprefix('oracle-'),
+                       exclusion_radius=getattr(args, 'exclusion_radius', 10))
+        return run_stdio(**options) if args.stdio else run_random(args.request, **options)
     if args.action == "captcha":
         from booking_tools.captcha import run
         return run(args.request)

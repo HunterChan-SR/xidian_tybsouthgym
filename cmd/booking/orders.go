@@ -69,10 +69,11 @@ func guardedSubmit(ctx context.Context, c *Client, cfg Config, cand Candidate, d
 		}
 	}
 	// Persist before request: a crash or timeout must never trigger blind resubmission.
+	guardStarted := time.Now()
 	if e := saveJSON(path, out); e != nil {
 		return out, e
 	}
-	c.event(map[string]any{"at": out.At, "event": "submit", "account": c.Name, "date": date, "field": out.FieldNo, "totalCents": out.TotalCents, "items": cand.Items})
+	c.event(map[string]any{"at": time.Now().In(shanghai).Format(time.RFC3339Nano), "event": "submit", "guardPersistMs": elapsedMS(guardStarted), "account": c.Name, "date": date, "field": out.FieldNo, "totalCents": out.TotalCents, "items": cand.Items})
 	items, _ := json.Marshal(cand.Items)
 	ep := "/Field/OrderField"
 	if cand.TotalCents == 0 {
@@ -121,6 +122,20 @@ func guardedSubmit(ctx context.Context, c *Client, cfg Config, cand Candidate, d
 	return out, &Fault{Kind: out.Detail}
 }
 
+// GetPayInfo returns dates such as "2026/11/9" without zero padding.
+// Parse the calendar date instead of comparing a truncated display string.
+func normalizeOrderDate(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if i := strings.IndexAny(value, " T"); i >= 0 {
+		value = value[:i]
+	}
+	date, err := time.Parse("2006-1-2", strings.ReplaceAll(value, "/", "-"))
+	if err != nil {
+		return "", &Fault{Kind: "order_verification_required"}
+	}
+	return date.Format("2006-01-02"), nil
+}
+
 func (c *Client) verifyOrder(ctx context.Context, cfg Config, out Outcome) error {
 	if out.OrderID == "" {
 		return &Fault{Kind: "order_verification_required"}
@@ -140,9 +155,9 @@ func (c *Client) verifyOrder(ctx context.Context, cfg Config, out Outcome) error
 	current := cfg.BeginTime
 	total := 0
 	for _, row := range rows {
-		date := strings.ReplaceAll(row.OrderDate, "/", "-")
-		if len(date) > 10 {
-			date = date[:10]
+		date, err := normalizeOrderDate(row.OrderDate)
+		if err != nil {
+			return err
 		}
 		begin, err := normalizeTime(row.BeginTime)
 		if err != nil {
@@ -229,7 +244,7 @@ func rejectionKind(message string) string {
 		return "booking_captcha_rejected"
 	case strings.Contains(message, "下单速度过快"):
 		return "order_rate_limited"
-	case strings.Contains(message, "已被预订") || strings.Contains(message, "已经被预订") || strings.Contains(message, "已被预定") || strings.Contains(message, "已被占用"):
+	case strings.Contains(message, "已被预订") || strings.Contains(message, "已经被预订") || strings.Contains(message, "已被预定") || strings.Contains(message, "已被占用") || strings.Contains(message, "已被其他人抢跑"):
 		return "slot_taken"
 	case strings.Contains(message, "禁止预订天数超"):
 		return "date_not_released"

@@ -3,10 +3,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptrace"
 	"net/url"
 	"strconv"
 	"strings"
@@ -16,6 +18,7 @@ import (
 const origin = "https://tybsouthgym.xidian.edu.cn"
 
 type Client struct {
+	oracle         *oracleWorker
 	preflightError error
 	Name           string
 	ClockOffsets   []time.Duration
@@ -33,7 +36,14 @@ func newClient(s Session, timeout time.Duration) *Client {
 	cookieRequest := &http.Request{Header: http.Header{}}
 	cookieRequest.Header.Set("Cookie", s.Cookie)
 	jar.SetCookies(baseURL, cookieRequest.Cookies())
-	return &Client{Base: origin, Session: s, HTTP: &http.Client{Timeout: timeout, Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Share TLS tickets between this account's reads and fresh mutation connections.
+	// No TLS 0-RTT or request replay; normal certificate verification remains enabled.
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{}
+	}
+	transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(8)
+	return &Client{Base: origin, Session: s, HTTP: &http.Client{Transport: transport, Timeout: timeout, Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
 func (c *Client) request(ctx context.Context, path string, q url.Values) ([]byte, error) {
@@ -52,8 +62,19 @@ func (c *Client) request(ctx context.Context, path string, q url.Values) ([]byte
 	req.Header.Set("Referer", c.Base+"/Views/Field/FieldOrder.html?VenueNo=01&FieldTypeNo=001")
 	httpClient := c.HTTP
 	if path == "/Field/OrderField" || path == "/Field/OrderFieldFree" || path == "/Field/FieldCancel" {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
+		base, ok := c.HTTP.Transport.(*http.Transport)
+		if !ok {
+			base = http.DefaultTransport.(*http.Transport)
+		}
+		transport := base.Clone()
 		transport.DisableKeepAlives = true
+		// A mutation uses one fresh HTTP/1.1 connection. HTTP/2 has its own retry
+		// path, so it is deliberately disabled here even when reads negotiate h2.
+		transport.ForceAttemptHTTP2 = false
+		transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+		if transport.TLSClientConfig != nil {
+			transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
+		}
 		defer transport.CloseIdleConnections()
 		copyClient := *c.HTTP
 		copyClient.Transport = transport
@@ -100,6 +121,8 @@ func (c *Client) request(ctx context.Context, path string, q url.Values) ([]byte
 
 func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, error) {
 	started := time.Now()
+	network := newRequestTiming(started)
+	ctx = httptrace.WithClientTrace(ctx, network.trace())
 	c.LastHTTPStatus = 0
 	c.LastServerDate = ""
 	body, err := c.request(ctx, path, q)
@@ -113,6 +136,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 	}
 	record := map[string]any{"at": started.In(shanghai).Format(time.RFC3339Nano), "path": path, "account": c.Name,
 		"httpStatus": c.LastHTTPStatus, "latencyMs": time.Since(started).Milliseconds(), "serverDate": c.LastServerDate}
+	record["network"] = network.snapshot()
 	if err != nil {
 		record["error"] = faultKind(err)
 	}
