@@ -69,6 +69,9 @@ func preparePool(ctx context.Context, clients []*Client) ([]poolMember, error) {
 		if e := client.checkLogin(ctx); e != nil {
 			client.preflightError = e
 			client.event(map[string]any{"event": "account_unavailable", "account": client.Name, "reason": faultKind(e)})
+			if faultKind(e) == "rate_limited" {
+				return nil, e
+			}
 			if retryablePreflight(e) {
 				var prior, current *Fault
 				if transient == nil || (errors.As(transient, &prior) && errors.As(e, &current) && current.RetryAfter > prior.RetryAfter) {
@@ -81,6 +84,9 @@ func preparePool(ctx context.Context, clients []*Client) ([]poolMember, error) {
 		if e != nil {
 			client.preflightError = e
 			client.event(map[string]any{"event": "account_unavailable", "account": client.Name, "reason": faultKind(e)})
+			if faultKind(e) == "rate_limited" {
+				return nil, e
+			}
 			if retryablePreflight(e) {
 				var prior, current *Fault
 				if transient == nil || (errors.As(transient, &prior) && errors.As(e, &current) && current.RetryAfter > prior.RetryAfter) {

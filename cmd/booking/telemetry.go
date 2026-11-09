@@ -14,6 +14,13 @@ func (c *Client) event(value any) {
 	if c.EventLog == "" {
 		return
 	}
+	// Events without their own request-start timestamp still need an exact time
+	// to reconstruct inventory -> oracle -> durable guard -> submission latency.
+	if record, ok := value.(map[string]any); ok {
+		if _, present := record["at"]; !present {
+			record["at"] = time.Now().In(shanghai).Format(time.RFC3339Nano)
+		}
+	}
 	b, e := json.Marshal(value)
 	if e != nil {
 		return

@@ -34,3 +34,23 @@ func TestMultiAccountRequiresSharedGuard(t *testing.T) {
 		t.Fatal("duplicate alias accepted")
 	}
 }
+
+func TestCaptchaSolverConfiguration(t *testing.T) {
+	cfg := config(t)
+	cfg.CaptchaSolverPersistent = true
+	if cfg.Validate() == nil {
+		t.Fatal("persistent solver without a command accepted")
+	}
+	cfg.CaptchaSolverCommand = []string{"oracle"}
+	if cfg.Validate() == nil {
+		t.Fatal("solver configured with captcha disabled")
+	}
+	cfg.BookingCaptcha = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.CaptchaSolverCommand = []string{" "}
+	if cfg.Validate() == nil {
+		t.Fatal("empty solver executable accepted")
+	}
+}

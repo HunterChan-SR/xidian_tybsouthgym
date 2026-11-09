@@ -1,9 +1,14 @@
-// 预约滑块由用户在官方组件中完成；凭据只用于紧接的一次提交。
+// 预约滑块由人工窗口或本机求解接口完成；答案只用于当前挑战的下一次提交。
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"net/url"
 	"os"
 	"os/exec"
@@ -14,7 +19,7 @@ import (
 
 type captchaReply struct {
 	Token     string `json:"token"`
-	X         int    `json:"x"`
+	X         *int   `json:"x"`
 	Cancelled bool   `json:"cancelled"`
 }
 
@@ -46,11 +51,59 @@ func (c *Client) bookingCaptcha(ctx context.Context, cfg Config) (url.Values, er
 	if *challenge.Type != 1 || challenge.Token == "" || challenge.BG == "" || challenge.Piece == "" {
 		return nil, &Fault{Kind: "booking_captcha_protocol"}
 	}
-	return c.humanCaptcha(ctx, cfg, b, challenge.Token)
+	maxX, err := captchaMaxX(challenge.BG, challenge.Piece)
+	if err != nil {
+		return nil, err
+	}
+	return c.solveCaptcha(ctx, cfg, b, challenge.Token, maxX)
 }
 
-func (c *Client) humanCaptcha(ctx context.Context, cfg Config, challenge []byte, token string) (url.Values, error) {
-	dir := filepath.Join(cfg.StateDir, "captcha")
+// captchaMaxX derives the inclusive original-pixel bound from the challenge,
+// independently of the worker's reply. Transparent piece borders count as width.
+func captchaMaxX(background, piece string) (int, error) {
+	var dimensions [2]image.Config
+	for i, encoded := range []string{background, piece} {
+		data, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return 0, &Fault{Kind: "booking_captcha_protocol"}
+		}
+		dimensions[i], _, err = image.DecodeConfig(bytes.NewReader(data))
+		if err != nil || dimensions[i].Width <= 0 || dimensions[i].Height <= 0 {
+			return 0, &Fault{Kind: "booking_captcha_protocol"}
+		}
+	}
+	bg, part := dimensions[0], dimensions[1]
+	if part.Width > bg.Width || part.Height > bg.Height {
+		return 0, &Fault{Kind: "booking_captcha_protocol"}
+	}
+	return bg.Width - part.Width, nil
+}
+
+func (c *Client) solveCaptcha(ctx context.Context, cfg Config, challenge []byte, token string, maxX int) (url.Values, error) {
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	request := map[string]any{"challenge": json.RawMessage(challenge), "account": c.Name, "deadline": deadline.Format(time.RFC3339Nano)}
+	if cfg.CaptchaSolverPersistent {
+		if c.oracle == nil {
+			return nil, &Fault{Kind: "booking_captcha_not_completed"}
+		}
+		c.event(map[string]any{"event": "booking_captcha_wait", "account": c.Name, "transport": "stdio"})
+		started := time.Now()
+		var reply captchaReply
+		if err := c.oracle.exchange(ctx, request, &reply); err != nil {
+			return nil, err
+		}
+		values, err := captchaValues(reply, token, maxX)
+		if err == nil {
+			c.event(map[string]any{"event": "booking_captcha_ready", "account": c.Name, "elapsedMs": time.Since(started).Milliseconds(), "transport": "stdio"})
+		}
+		return values, err
+	}
+	dir, err := filepath.Abs(filepath.Join(cfg.StateDir, "captcha"))
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
@@ -62,7 +115,7 @@ func (c *Client) humanCaptcha(ctx context.Context, cfg Config, challenge []byte,
 	f.Close()
 	defer os.Remove(path)
 	defer os.Remove(path + ".reply")
-	if err = saveJSON(path, map[string]any{"challenge": json.RawMessage(challenge), "account": c.Name}); err != nil {
+	if err = saveJSON(path, request); err != nil {
 		return nil, err
 	}
 	c.event(map[string]any{"event": "booking_captcha_wait", "account": c.Name})
@@ -71,10 +124,18 @@ func (c *Client) humanCaptcha(ctx context.Context, cfg Config, challenge []byte,
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, "python", "-X", "utf8", filepath.Join(root, "main.py"), "captcha", "--request", path)
+	command := append([]string(nil), cfg.CaptchaSolverCommand...)
+	if len(command) == 0 {
+		command = []string{"python", "-X", "utf8", filepath.Join(root, "main.py"), "captcha"}
+	}
+	command = append(command, "--request", path)
+	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 	cmd.Dir = root
-	// Browser is interactive; never print request data or subprocess exceptions containing it.
-	cmd.Stdout = os.Stdout
+	// Only the built-in worker has a known redacted output format.
+	if len(cfg.CaptchaSolverCommand) == 0 {
+		cmd.Stdout = os.Stdout
+	}
+	started := time.Now()
 	if err = cmd.Run(); err != nil {
 		return nil, &Fault{Kind: "booking_captcha_not_completed"}
 	}
@@ -86,17 +147,21 @@ func (c *Client) humanCaptcha(ctx context.Context, cfg Config, challenge []byte,
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	return captchaValues(reply, token)
+	values, err := captchaValues(reply, token, maxX)
+	if err == nil {
+		c.event(map[string]any{"event": "booking_captcha_ready", "account": c.Name, "elapsedMs": time.Since(started).Milliseconds()})
+	}
+	return values, err
 }
 
-func captchaValues(reply captchaReply, token string) (url.Values, error) {
+func captchaValues(reply captchaReply, token string, maxX int) (url.Values, error) {
 	if reply.Cancelled {
 		return nil, &Fault{Kind: "booking_captcha_not_completed"}
 	}
-	if reply.Token != token || reply.X < 0 || reply.X > 300 {
+	if reply.Token != token || reply.X == nil || *reply.X < 0 || *reply.X > maxX {
 		return nil, &Fault{Kind: "booking_captcha_protocol"}
 	}
-	return url.Values{"SliderToken": {reply.Token}, "SliderX": {strconv.Itoa(reply.X)}}, nil
+	return url.Values{"SliderToken": {reply.Token}, "SliderX": {strconv.Itoa(*reply.X)}}, nil
 
 }
 
@@ -109,6 +174,11 @@ func previewCaptcha(ctx context.Context, clients []*Client, cfg Config) (Outcome
 	}
 	c := ready[0].client
 	out.Account = c.Name
+	closeWorker, err := attachOracleWorker(ctx, clients, cfg)
+	if err != nil {
+		return out, err
+	}
+	defer closeWorker()
 	proof, err := c.bookingCaptcha(ctx, cfg)
 	if err != nil {
 		return out, err

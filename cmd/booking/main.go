@@ -70,6 +70,9 @@ func main() {
 			out.Detail = e.Error()
 		}
 	}
+	for _, client := range clients {
+		client.HTTP.CloseIdleConnections()
+	}
 	out.At = time.Now().In(shanghai).Format(time.RFC3339)
 	if len(clients) > 0 {
 		clients[0].event(map[string]any{"event": "run_end", "at": out.At, "mode": *mode, "status": out.Status, "account": out.Account, "date": out.TargetDate, "field": out.FieldNo, "totalCents": out.TotalCents, "observationOnlyReason": out.ObservationOnlyReason})

@@ -14,34 +14,42 @@ import (
 )
 
 type Config struct {
-	fileSHA256            string
-	PoolID                string
-	Accounts              []Account
-	TestOnly              bool
-	ExactDate             string
-	VenueNo               string
-	FieldTypeNo           string
-	DateAdd               int
-	BeginTime             string
-	EndTime               string
-	PreferredFields       []string
-	AllowOtherFields      bool
-	FieldPrefix           string
-	MaxTotalCents         int
-	ReleaseTime           string
-	WindowSeconds         int
-	PollSeconds           int
-	RequestTimeoutSeconds int
-	CookieFile            string
-	StateDir              string
-	AllowLive             bool
-	EveningFlexible       bool
-	AllDayFallback        bool
-	BookingCaptcha        bool
-	WeekendAfternoon      bool
+	fileSHA256              string
+	PoolID                  string
+	Accounts                []Account
+	TestOnly                bool
+	ExactDate               string
+	VenueNo                 string
+	FieldTypeNo             string
+	DateAdd                 int
+	BeginTime               string
+	EndTime                 string
+	PreferredFields         []string
+	AllowOtherFields        bool
+	FieldPrefix             string
+	MaxTotalCents           int
+	ReleaseTime             string
+	WindowSeconds           int
+	PollSeconds             int
+	RequestTimeoutSeconds   int
+	CookieFile              string
+	StateDir                string
+	AllowLive               bool
+	EveningFlexible         bool
+	AllDayFallback          bool
+	BookingCaptcha          bool
+	CaptchaSolverCommand    []string
+	CaptchaSolverPersistent bool
+	WeekendAfternoon        bool
 }
 
 func (c Config) Validate() error {
+	if c.CaptchaSolverPersistent && len(c.CaptchaSolverCommand) == 0 {
+		return errors.New("CaptchaSolverPersistent需要支持stdio协议的CaptchaSolverCommand")
+	}
+	if len(c.CaptchaSolverCommand) > 0 && (!c.BookingCaptcha || strings.TrimSpace(c.CaptchaSolverCommand[0]) == "") {
+		return errors.New("CaptchaSolverCommand需要开启BookingCaptcha并指定可执行命令")
+	}
 	if c.VenueNo != "01" || !((c.FieldTypeNo == "001" && c.FieldPrefix == "YMQ" && !c.TestOnly) || (c.FieldTypeNo == "007" && c.FieldPrefix == "BXQYMQ" && !c.TestOnly) || (c.FieldTypeNo == "002" && c.FieldPrefix == "PPQ" && c.TestOnly)) {
 		return errors.New("仅支持已核验的01/001南校区、01/007北校区普通羽毛球及获准乒乓测试")
 	}

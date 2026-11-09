@@ -10,6 +10,36 @@ import (
 	"time"
 )
 
+func TestPreflightRateLimitStopsEntirePool(t *testing.T) {
+	for _, limitedEndpoint := range []string{"/User/CheckUserStatus", "/Field/GetOrderInfo"} {
+		t.Run(limitedEndpoint, func(t *testing.T) {
+			calls, nextCalls, waits := 0, 0, 0
+			first := fake(t, func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Path == limitedEndpoint {
+					w.Header().Set("Retry-After", "30")
+					w.WriteHeader(429)
+					return
+				}
+				fmt.Fprint(w, "1")
+			})
+			second := fake(t, func(w http.ResponseWriter, r *http.Request) { nextCalls++; fmt.Fprint(w, "1") })
+			first.Session.Cookie = "UserId=one"
+			second.Session.Cookie = "UserId=two"
+			ready, err := preparePoolWithRetry(context.Background(), []*Client{first, second}, func(_ context.Context, d time.Duration) error {
+				waits++
+				if d != 30*time.Second {
+					t.Fatal("Retry-After was not honored", d)
+				}
+				return nil
+			})
+			if faultKind(err) != "rate_limited" || len(ready) != 0 || nextCalls != 0 || waits != 2 {
+				t.Fatal(ready, err, calls, nextCalls, waits)
+			}
+		})
+	}
+}
+
 func TestPoolUsesRefreshedDuplicateSession(t *testing.T) {
 	cfg := config(t)
 	first := fake(t, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "0") })

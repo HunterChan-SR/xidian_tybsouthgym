@@ -25,6 +25,7 @@
   ],
   "PoolID": "badminton-19-21",
   "BookingCaptcha": true,
+  "CaptchaSolverCommand": [],
   "WeekendAfternoon": true,
   "EveningFlexible": false,
   "AllDayFallback": false
