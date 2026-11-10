@@ -87,6 +87,11 @@ func runPool(ctx context.Context, clients []*Client, cfg Config, mode string) (o
 		}
 		defer closeWorker()
 	}
+	defer func() {
+		for _, client := range clients {
+			client.closeOrderPreconnect()
+		}
+	}()
 	start, end := window(cfg, now)
 	if mode != "probe" && mode != "test-book" {
 		offset, err := c.clockOffset()
@@ -119,12 +124,26 @@ func runPool(ctx context.Context, clients []*Client, cfg Config, mode string) (o
 			deadline = end.Add(-offset)
 		}
 		c.event(map[string]any{"event": "schedule", "at": time.Now().In(shanghai).Format(time.RFC3339Nano), "estimatedServerOffsetMs": offset.Milliseconds(), "localTrigger": trigger.Format(time.RFC3339Nano)})
+		if mode == "book" && cfg.OrderTLSPreconnect {
+			if err = sleepContext(ctx, time.Until(trigger.Add(-orderPreconnectLead))); err != nil {
+				return out, err
+			}
+			for _, member := range ready {
+				member.client.startOrderPreconnect(ctx)
+			}
+		}
 		if err = sleepContext(ctx, time.Until(trigger)); err != nil {
 			return out, err
 		}
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithDeadline(ctx, deadline)
 		defer cancel()
+	}
+
+	if mode == "test-book" && cfg.OrderTLSPreconnect {
+		for _, member := range ready {
+			member.client.startOrderPreconnect(ctx)
+		}
 	}
 
 	// A protocol/price anomaly latches the entire pool into read-only observation.
@@ -244,6 +263,9 @@ func runPool(ctx context.Context, clients []*Client, cfg Config, mode string) (o
 			if observationReason != "" {
 				out.Status = "observation_only"
 			} else if len(candidates) > 0 {
+				if mode == "book" && cfg.ParallelOrders == 2 {
+					return runTwoCandidates(ctx, ready, cfg, candidates, out.TargetDate)
+				}
 				cand := candidates[0]
 				out.Status = "available"
 				out.Account = c.Name

@@ -7,10 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
+var eventWriteMu sync.Mutex
+
 func (c *Client) event(value any) {
+	eventWriteMu.Lock()
+	defer eventWriteMu.Unlock()
 	if c.EventLog == "" {
 		return
 	}

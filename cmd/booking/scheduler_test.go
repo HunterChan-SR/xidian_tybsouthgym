@@ -162,6 +162,7 @@ func testPoolCompetitionFallbackStopsAfterOneSuccess(t *testing.T, persistent bo
 
 func TestPoolLostOrderResponseStopsOtherAccounts(t *testing.T) {
 	cfg := config(t)
+	cfg.OrderTLSPreconnect = true
 	cfg.PoolID = "lost-response"
 	cfg.ReleaseTime = time.Now().In(shanghai).Add(-time.Second).Format("15:04:05")
 	orders := 0

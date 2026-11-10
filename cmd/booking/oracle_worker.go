@@ -13,13 +13,14 @@ import (
 )
 
 type oracleWorker struct {
-	input     io.WriteCloser
-	output    io.ReadCloser
-	encode    *json.Encoder
-	decode    *json.Decoder
-	cancel    context.CancelFunc
-	done      chan struct{}
-	closeOnce sync.Once
+	exchangeMu sync.Mutex
+	input      io.WriteCloser
+	output     io.ReadCloser
+	encode     *json.Encoder
+	decode     *json.Decoder
+	cancel     context.CancelFunc
+	done       chan struct{}
+	closeOnce  sync.Once
 }
 
 func startOracleWorker(ctx context.Context, cfg Config) (*oracleWorker, error) {
@@ -68,9 +69,11 @@ func startOracleWorker(ctx context.Context, cfg Config) (*oracleWorker, error) {
 	return w, nil
 }
 
-// Callers are the serial account pool: exactly one request may be in flight.
+// Serial JSON handoff even when two account requests overlap on the network.
 // Cancellation kills and reaps this worker; no automatic restart or replay.
 func (w *oracleWorker) exchange(ctx context.Context, request, reply any) error {
+	w.exchangeMu.Lock()
+	defer w.exchangeMu.Unlock()
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}

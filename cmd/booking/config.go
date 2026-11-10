@@ -14,6 +14,10 @@ import (
 )
 
 type Config struct {
+	ParallelOrders          int
+	ParallelStaggerMillis   int
+	MaxTemporaryCents       int
+	OrderTLSPreconnect      bool
 	fileSHA256              string
 	PoolID                  string
 	Accounts                []Account
@@ -44,6 +48,15 @@ type Config struct {
 }
 
 func (c Config) Validate() error {
+	if c.ParallelOrders != 0 && c.ParallelOrders != 1 && c.ParallelOrders != 2 {
+		return errors.New("ParallelOrders只允许0/1（串行）或2")
+	}
+	if c.ParallelOrders == 2 {
+		if c.TestOnly || c.PoolID == "" || c.VenueNo != "01" || c.FieldTypeNo != "001" || c.DateAdd != 2 || c.BeginTime != "19:00" || c.EndTime != "21:00" || c.MaxTotalCents > 2400 || c.MaxTemporaryCents != 4800 || c.ParallelStaggerMillis < 50 || c.ParallelStaggerMillis > 2000 {
+			return errors.New("两路仅允许原南校区目标，每笔24元内、临时48元、错峰50至2000毫秒")
+		}
+	}
+
 	if c.CaptchaSolverPersistent && len(c.CaptchaSolverCommand) == 0 {
 		return errors.New("CaptchaSolverPersistent需要支持stdio协议的CaptchaSolverCommand")
 	}
