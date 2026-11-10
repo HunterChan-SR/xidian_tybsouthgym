@@ -18,9 +18,10 @@ var buildID = "development"
 
 func main() {
 	configPath := flag.String("config", "booking.json", "配置路径")
-	mode := flag.String("mode", "probe", "probe: 只读检查; watch: 放票窗口只读观察; book: 真实预约; captcha-preview: 人工滑块预演，不提交订单")
+	mode := flag.String("mode", "probe", "probe: 只读检查; watch: 放票窗口只读观察; book: 真实预约; captcha-preview: 滑块预演; tls-preview: TLS只读预演; reconcile-parallel: 仅核对并收尾已有两路订单")
+	orderDate := flag.String("order-date", "", "reconcile-parallel使用的原订单日期 YYYY-MM-DD")
 	flag.Parse()
-	if *mode != "probe" && *mode != "watch" && *mode != "book" && *mode != "test-book" && *mode != "cancel-test" && *mode != "captcha-preview" {
+	if *mode != "probe" && *mode != "watch" && *mode != "book" && *mode != "test-book" && *mode != "cancel-test" && *mode != "captcha-preview" && *mode != "tls-preview" && *mode != "reconcile-parallel" {
 		fmt.Fprintln(os.Stderr, "无效 mode")
 		os.Exit(2)
 	}
@@ -59,7 +60,11 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	var out Outcome
-	if *mode == "captcha-preview" {
+	if *mode == "reconcile-parallel" {
+		out, e = recoverParallel(ctx, clients, cfg, *orderDate)
+	} else if *mode == "tls-preview" {
+		out, e = previewOrderTLS(ctx, clients)
+	} else if *mode == "captcha-preview" {
 		out, e = previewCaptcha(ctx, clients, cfg)
 	} else {
 		out, e = runPool(ctx, clients, cfg, *mode)
@@ -71,6 +76,7 @@ func main() {
 		}
 	}
 	for _, client := range clients {
+		client.closeOrderPreconnect()
 		client.HTTP.CloseIdleConnections()
 	}
 	out.At = time.Now().In(shanghai).Format(time.RFC3339)
@@ -80,6 +86,12 @@ func main() {
 	latest := "latest.json"
 	if *mode == "captcha-preview" {
 		latest = "latest-captcha-preview.json"
+	}
+	if *mode == "tls-preview" {
+		latest = "latest-tls-preview.json"
+	}
+	if *mode == "reconcile-parallel" {
+		latest = "latest-parallel-recovery.json"
 	}
 	writeErr := saveJSON(filepath.Join(cfg.StateDir, latest), out)
 	historyErr := saveJSON(filepath.Join(cfg.StateDir, "runs", time.Now().In(shanghai).Format("20060102-150405")+"-"+*mode+".json"), out)

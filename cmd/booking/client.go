@@ -18,6 +18,7 @@ import (
 const origin = "https://tybsouthgym.xidian.edu.cn"
 
 type Client struct {
+	preconnect     *preparedConnection
 	oracle         *oracleWorker
 	preflightError error
 	Name           string
@@ -46,7 +47,7 @@ func newClient(s Session, timeout time.Duration) *Client {
 	return &Client{Base: origin, Session: s, HTTP: &http.Client{Transport: transport, Timeout: timeout, Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
-func (c *Client) request(ctx context.Context, path string, q url.Values) ([]byte, error) {
+func (c *Client) request(ctx context.Context, path string, q url.Values, oneShot bool) ([]byte, error) {
 	values := url.Values{}
 	for k, v := range q {
 		values[k] = v
@@ -61,25 +62,12 @@ func (c *Client) request(ctx context.Context, path string, q url.Values) ([]byte
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	req.Header.Set("Referer", c.Base+"/Views/Field/FieldOrder.html?VenueNo=01&FieldTypeNo=001")
 	httpClient := c.HTTP
-	if path == "/Field/OrderField" || path == "/Field/OrderFieldFree" || path == "/Field/FieldCancel" {
-		base, ok := c.HTTP.Transport.(*http.Transport)
-		if !ok {
-			base = http.DefaultTransport.(*http.Transport)
-		}
-		transport := base.Clone()
-		transport.DisableKeepAlives = true
-		// A mutation uses one fresh HTTP/1.1 connection. HTTP/2 has its own retry
-		// path, so it is deliberately disabled here even when reads negotiate h2.
-		transport.ForceAttemptHTTP2 = false
-		transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
-		if transport.TLSClientConfig != nil {
-			transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
-		}
-		defer transport.CloseIdleConnections()
-		copyClient := *c.HTTP
-		copyClient.Transport = transport
-		httpClient = &copyClient
+	if oneShot {
+		var closeTransport func()
+		httpClient, closeTransport = c.oneShotClient(req)
+		defer closeTransport()
 	}
+
 	r, e := httpClient.Do(req)
 	if e != nil {
 		return nil, &Fault{Kind: "network_error"}
@@ -120,12 +108,17 @@ func (c *Client) request(ctx context.Context, path string, q url.Values) ([]byte
 }
 
 func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, error) {
+	oneShot := path == "/Field/OrderField" || path == "/Field/OrderFieldFree" || path == "/Field/FieldCancel"
+	return c.getUsing(ctx, path, q, oneShot)
+}
+
+func (c *Client) getUsing(ctx context.Context, path string, q url.Values, oneShot bool) ([]byte, error) {
 	started := time.Now()
 	network := newRequestTiming(started)
 	ctx = httptrace.WithClientTrace(ctx, network.trace())
 	c.LastHTTPStatus = 0
 	c.LastServerDate = ""
-	body, err := c.request(ctx, path, q)
+	body, err := c.request(ctx, path, q, oneShot)
 	if err == nil && (path == "/User/CheckUserStatus" || path == "/Field/GetOrderInfo") {
 		if serverTime, e := http.ParseTime(c.LastServerDate); e == nil {
 			c.ClockOffsets = append(c.ClockOffsets, serverTime.Sub(started.Add(time.Since(started)/2)))

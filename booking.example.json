@@ -28,5 +28,9 @@
   "CaptchaSolverCommand": [],
   "WeekendAfternoon": true,
   "EveningFlexible": false,
-  "AllDayFallback": false
+  "AllDayFallback": false,
+  "OrderTLSPreconnect": false,
+  "ParallelOrders": 1,
+  "ParallelStaggerMillis": 150,
+  "MaxTemporaryCents": 4800
 }

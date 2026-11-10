@@ -34,3 +34,14 @@ BookingCaptcha=true 时，程序选择候选后获取官方 GetFieldSliderCaptch
 Go 及 Edge 驱动可放在项目旁 OrderFieldSimulator-tools/go/bin、OrderFieldSimulator-tools/edge。入口优先查找相邻工具，再使用 PATH；驱动版本应与 Edge 主版本匹配。
 
 旧材料保存在项目外归档或被忽略的本机目录。Git 仓库不包含 data/、runtime/、booking.json、evidence/、实际研究计划及历史观测。首次配置复制示例，不覆盖已有本机会话和订单保护。
+
+## TLS 提前握手与流水线研发
+
+OrderTLSPreconnect 开启时，释放前750ms并行准备各身份的专用TLS连接，准备过程不向平台发出业务HTTP请求；HTTP代理的CONNECT仅建立隧道。ParallelOrders=2时共享一次库存快照，最多两路提交；详见下方已批准范围。零下单验证使用 booking.exe -config booking.json -mode tls-preview，仅核验会话与预热连接上的只读查询。详细边界见[流水线方案](pipeline.md)。
+
+
+## 已批准的两路范围与收尾
+
+2026-11-08用户确认“两路”：每笔≤24元、临时最多2笔/48元、最终保留1笔；第三身份只在明确场地占用后接替。ParallelOrders=2、MaxTemporaryCents=4800、ParallelStaggerMillis=150，后者是暂定参数。不临时改为三路。
+成功或未知停止新派发，但必须收齐已发请求。协调器核验订单并取消多余未支付单，读到PayStatus=4才算完成。parallel_reconciliation_required时保留全部保护并报告账号和待核对情况，不能只看到一笔成功就声称全池只剩一笔。
+原runner.lock存在时先核对真实进程；原共享订单文件含逐尝试账本。进程已确认退出且运行锁问题已处理后，可运行 booking.exe -config booking.json -mode reconcile-parallel -order-date 原预约日期，仅恢复核验与取消，不新下单。未知无OID的尝试先核对官方我的预约。不要删除账本或尝试收据。

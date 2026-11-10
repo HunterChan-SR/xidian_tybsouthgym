@@ -15,6 +15,8 @@
 | CookieFile | 单账号默认会话路径 |
 | StateDir / PoolID | 状态目录及跨账号共享的目标订单保护标识 |
 | AllowLive | 是否允许真实预约；新配置默认为false |
+| ParallelOrders / ParallelStaggerMillis / MaxTemporaryCents | 默认串行；2启用两路，初始错峰150ms、临时上限4800分，每笔仍≤2400分，仅原南校区目标。见[流水线](pipeline.md) |
+| OrderTLSPreconnect | 默认false；释放前750ms为已验证身份各预握手一次，连接最多保留5秒并仅承载一次请求，HTTP代理沿用原CONNECT隧道，其他代理回退原连接方式；见[流水线](pipeline.md) |
 | BookingCaptcha | 获取下单滑块并等待答案；当前平台应开启 |
 | CaptchaSolverCommand | 可选的本机求解命令及参数数组，空数组或省略时使用官方人工滑块窗口；详见[oracle 接口](captcha-oracle.md) |
 | CaptchaSolverPersistent | 默认false；true要求命令支持stdio协议，在放票前预热一个进程、全池串行复用，本轮结束回收；不适用于默认Edge窗口 |

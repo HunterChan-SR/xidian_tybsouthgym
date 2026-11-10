@@ -42,6 +42,10 @@ def prepare(root, day, revise=False):
               "goal": {key: config[key] for key in ["VenueNo", "FieldTypeNo", "BeginTime", "EndTime", "MaxTotalCents", "PreferredFields", "AllowOtherFields", "WindowSeconds", "PollSeconds", "RequestTimeoutSeconds"]},
               "eveningFlexible": config.get("EveningFlexible", False),
               "allDayFallback": config.get("AllDayFallback", False),
+              "parallelOrders": config.get("ParallelOrders", 1),
+              "parallelStaggerMillis": config.get("ParallelStaggerMillis", 0),
+              "maxTemporaryCents": config.get("MaxTemporaryCents", 2400),
+              "orderTLSPreconnect": config.get("OrderTLSPreconnect", False),
               "configuredAliases": [a["Name"] for a in config.get("Accounts", [])],
               "decisionRule": "优先获得目标预约；一次只调整一个实验变量；观测不自动证明假设；偏离计划须记录原因。"}
     write_json(path, result)
@@ -105,7 +109,7 @@ def analyze(events):
             "inventoryLastObservedAt": snapshots[-1].get("at") if snapshots else None,
             "eligibleForInventoryComparison": mode == "book" and bool(snapshots) and group["end"] is not None and end.get("status") not in ABORTED_BASELINE_STATUSES and not protocol_stop,
             "baselineExclusionReason": "program_or_protocol_abort" if mode == "book" and (protocol_stop or end.get("status") in ABORTED_BASELINE_STATUSES) else None,
-            "unresolvedSubmission": bool(submissions) and (not group["end"] or end.get("status") in {"order_uncertain", "order_verification_required", "order_details_mismatch", "network_error"})})
+            "unresolvedSubmission": bool(submissions) and (not group["end"] or end.get("status") in {"order_uncertain", "order_verification_required", "order_details_mismatch", "network_error", "parallel_reconciliation_required"})})
     return {"runs": summaries, "unattributedEvents": unattributed,
             "competitionRunsWithInventory": sum(r["eligibleForInventoryComparison"] for r in summaries),
             "caution": "库存可行性是单次单账号查询时的条件判断，不证明提交时仍可获得；probe、测试单和缺少结束记录的运行不纳入库存策略对照。"}
